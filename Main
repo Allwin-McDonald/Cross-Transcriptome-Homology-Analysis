@@ -1,0 +1,269 @@
+import os
+from Bio.Seq import Seq
+from Bio import Align
+import scipy.stats
+
+
+directory = "Date" + "keyword" #name of desired directory
+parent_dir = "C:/..." #insert directory location here
+path = os.path.join(parent_dir,directory)
+
+#Bait file of desired gene list to compare
+bait = os.path.join(parent_dir,"Candidate peptides.txt" )    #Name + AA seq in fasta format  QUERY SEQUENCES
+
+Candidates_List = []
+Codon_Table = [['TTT',"F"],['TTC',"F"],['TTA',"L"],['TTG',"L"],['TCT',"S"],['TCC',"S"],['TCA',"S"],['TCG',"S"],['TAT',"Y"],['TAC',"Y"],['TAA',"-"],['TAG',"-"],['TGT',"C"],['TGC',"C"],['TGA',"-"],['TGG',"W"],['CTT',"L"],['CTC',"L"],['CTA',"L"],['CTG',"L"],['CCT',"P"],['CCC',"P"],['CCA',"P"],['CCG',"P"],['CAT',"H"],['CAC',"H"],['CAA',"Q"],['CAG',"Q"],['CGT',"R"],['CGC',"R"],['CGA',"R"],['CGG',"R"],['ATT',"I"],['ATC',"I"],['ATA',"I"],['ATG',"M"],['ACT',"T"],['ACC',"T"],['ACA',"T"],['ACG',"T"],['AAT',"N"],['AAC',"N"],['AAA',"K"],['AAG',"K"],['AGT',"S"],['AGC',"S"],['AGA',"R"],['AGG',"R"],['GTT',"V"],['GTC',"V"],['GTA',"V"],['GTG',"V"],['GCT',"A"],['GCC',"A"],['GCA',"A"],['GCG',"A"],['GAT',"D"],['GAC',"D"],['GAA',"E"],['GAG',"E"],['GGT',"G"],['GGC',"G"],['GGA',"G"],['GGG',"G"]]
+
+minimum_length = 100  # minimum gene length to consider; in amino acids
+readfasta = False
+need_to_check = False
+candidate = 0
+check = 0
+Master_List = []
+read = True
+
+#Pull out bait sequence information
+Bait_List = []
+Number_of_transcriptomes = 6  #starting value for transcriptome search (see below list for transcriptome list)
+Ref_List = []
+New_Hit = False
+
+with open(bait,'r') as file: #open file containing bait sequences of interest (CDS, ORFs, transcriptome, genome)
+    add_list = []
+    seq = []
+    growing_sequence = ""
+
+    while read == True:
+        temp1 = file.readline().split("\n")  # removes end-of-line space
+        temp2 = temp1[0].split("\t")
+        if temp2[0] != '':
+            if temp2[0][0] == '>':
+                if len(add_list) > 0:
+                    if len(growing_sequence) > minimum_length:
+                        add_list.append(growing_sequence)
+                        seq = Seq(growing_sequence)
+                        Ref_List.append(seq)
+                        growing_sequence = ""
+                        Bait_List.append(add_list)
+                    add_list = []
+                temp0 = temp2[0].split(">")
+                add_list.append(temp0[1])
+            else:
+                growing_sequence = growing_sequence + temp2[0]
+        else:
+            read = False
+
+
+#ITERATE HERE for each transcriptome to compare bait to
+while Number_of_transcriptomes < 5:
+    Top_Homolog_List = []
+    Top_Hit = ["", 0, "", "", ""]
+    for i in range(len(Bait_List)):
+        Top_Homolog_List.append(Top_Hit)
+    if Number_of_transcriptomes == 0:
+        compared_transcriptome = os.path.join(parent_dir,"INSERT FASTA FILE HERE")    #transcriptome #1
+        Trans_key = "Uncaria guianensis"
+        keyword = "UG REDs"
+    elif Number_of_transcriptomes == 1:
+        compared_transcriptome = os.path.join(parent_dir, "INSERT FASTA FILE HERE")  # transcriptome #2
+        Trans_key = "Uncaria rhynchophylla"
+        keyword = "UR REDs"
+    elif Number_of_transcriptomes == 2:
+        compared_transcriptome = os.path.join(parent_dir, "INSERT FASTA FILE HERE")  # transcriptome #3
+        Trans_key = "Coffea arabica"
+        keyword = "Coffea REDs"
+    elif Number_of_transcriptomes == 3:
+        compared_transcriptome = os.path.join(parent_dir, "INSERT FASTA FILE HERE")  # transcriptome #4
+        Trans_key = "Catharanthus roseus"
+        keyword = "Cro REDs"
+    elif Number_of_transcriptomes == 4:
+        compared_transcriptome = os.path.join(parent_dir, "INSERT FASTA FILE HERE")  # transcriptome #5
+        Trans_key = "Cinchona pubescens"
+        keyword = "Cp genes"
+
+    readfasta = False
+    need_to_check = False
+    candidate = 0
+    read = True
+    linecount = 0
+    with open(compared_transcriptome,'r') as file: #open file containing sequences of interest (CDS, ORFs, transcriptome, genome)
+        while read == True:
+            temp1 = file.readline()  # removes end-of-line space
+            if temp1 != '':
+                if temp1[0] == '>':
+                    linecount += 1
+            else:
+                read = False
+
+    print(str(linecount) + "  " + Trans_key) #length of file to compare
+    with open(compared_transcriptome,'r') as file: #open file containing sequences of interest (CDS, ORFs, transcriptome, genome)
+        while file and candidate < 10000000: #in case of large file length
+            add_list = ["","",0,"","",0]  #stores all transcript/ORF information
+            New_Hit = False
+            #add_list = [name, nucleotide sequence, length, ORF nucleotides, translated peptide sequence]
+            sequence_line = ""
+            candidate +=1
+            if candidate%1000 == 0: #Progress check
+                print(str(100*round(candidate/linecount,3))+"%" + "  #=" + str(Number_of_transcriptomes) )
+            if need_to_check == False:
+                temp00 = file.readline()  #removes end-of-line space
+            if (len(temp00) > 1 or need_to_check == True) and candidate > -1:  #verifies that line exists
+                if need_to_check == True or temp00[0] == '>':
+                    if need_to_check == True:
+                        temp = temp1[0].split(";")  # some orf-containing headers have semi-colons in same space as transcript name, might need to be manually checked
+                    else: #for first gene only
+                        if candidate == 1:
+                            tempsemi = temp00.split(";")  # some orf-containing headers have semi-colons in same space as transcript name, might need to be manually checked
+                            temp = tempsemi[0].split("\n")
+                        else:
+                            temp = temp00[0].split(";")
+                    need_to_check = False
+                    readfasta = True
+                    if candidate == 1:
+                        add_list[0] = temp[0][1:]
+                    while readfasta:
+                        temp1 = file.readline().split("\n")
+                        if len(temp1) > 1:  #ensures not at end
+                            if temp1[0][0] != '>':  #if line is NOT fasta header
+                                sequence_line = sequence_line + temp1[0]  #adds to growing nucleotide sequence
+                            else:  #if file is fasta header
+                                add_list[0] = temp[0][1:] # name of gene
+                                add_list[1] = sequence_line  # sequence of whole transcript
+                                #translated ORF; checks every possible frame for each found gene
+                                for f in range(0,6):  #frames
+                                    if f < 3:
+                                        RC = 1
+                                    else:
+                                        RC = -1
+                                    reading = False
+                                    reading_check = ""
+                                    gene_codons = ""
+                                    start = 0
+                                    end = 0
+                                    frame = 0
+                                    Codon = ""
+                                    for j in range(0+(f%3),len(add_list[1]),3):
+                                        Codon = ""
+                                        if RC == 1:
+                                            for z in range(0, 3):
+                                                if (j + z) < len(add_list[1]):
+                                                    if add_list[1][j+ z] == 'A':
+                                                        Codon = Codon + "A"
+                                                    elif add_list[1][j+ z] == 'T':
+                                                        Codon = Codon + "T"
+                                                    elif add_list[1][j + z] == 'G':
+                                                        Codon = Codon + "G"
+                                                    elif add_list[1][j + z] == 'C':
+                                                        Codon = Codon + "C"
+                                        else:
+                                            for z in range(0, 3):
+                                                if add_list[1][len(add_list[1])-1-j - z] == 'A':
+                                                    Codon = Codon + "T"
+                                                elif add_list[1][len(add_list[1])-1-j - z]  == 'T':
+                                                    Codon = Codon + "A"
+                                                elif add_list[1][len(add_list[1])-1-j - z]  == 'G':
+                                                    Codon = Codon + "C"
+                                                elif add_list[1][len(add_list[1])-1-j - z]  == 'C':
+                                                    Codon = Codon + "G"
+                                        if reading:
+                                            for k in range(0, len(Codon_Table)):
+                                                if Codon == Codon_Table[k][0]:
+                                                    if k != 10 and k != 11 and k != 14:  #ORF continues
+                                                        gene_codons = gene_codons + Codon
+                                                        reading_check = reading_check + Codon_Table[k][1]
+                                                    if k == 10 or k == 11 or k == 14 or (abs(len(add_list[1])-j) < 3.5 and k != 10 and k != 11 and k != 14):  #STOP codon encountered
+                                                        if RC == 1:
+                                                            end = j + 2
+                                                        else:
+                                                            end = len(add_list[1])-1-j
+                                                        if (abs(end-start)) > minimum_length:
+                                                            if add_list[4] == "":
+                                                                #add_list[1] = ""  # save space
+                                                                add_list[2] = abs(end - start)  # length
+                                                                add_list[3] = gene_codons #ORF nucleotides
+                                                                add_list[4] = reading_check  # ORF peptide
+                                                            elif len(add_list[4]) < len(reading_check):
+                                                                #add_list[1] = ""  # save space
+                                                                add_list[2] = abs(end - start)  # length
+                                                                add_list[3] = gene_codons #ORF nucleotides
+                                                                add_list[4] = reading_check  # ORF peptide
+                                                            reading = False
+                                                        elif add_list[4] == "":
+                                                            #add_list[1] = ""  # save space
+                                                            add_list[3] = gene_codons #ORF nucleotides
+                                                            add_list[4] = reading_check  # ORF peptide
+                                                            reading_check = ""
+                                                            gene_codons = ""
+                                                            start = 0
+                                                            end = 0
+                                                            frame = 0
+                                                            Codon = ""
+                                                            reading = False
+                                                        else:
+                                                            reading_check = ""
+                                                            gene_codons = ""
+                                                            start = 0
+                                                            end = 0
+                                                            frame = 0
+                                                            Codon = ""
+                                                            reading = False
+                                                        reading = False
+                                                        break
+                                        elif Codon == Codon_Table[35][0]:  #check for ATG start codon
+                                            frame = (f%3)+1  #frame
+                                            if RC == 1:
+                                                start = j   #start nucleotide
+                                            else:
+                                                start = len(add_list[1])-j
+                                            reading_check = reading_check + Codon_Table[35][1]
+                                            gene_codons = gene_codons + Codon
+                                            reading = True
+                                # COULD INSERT SEQUENCE ALIGNMENT CODE HERE
+                                # SEQUENCE ALIGNMENTS
+                                if len(add_list[4]) > minimum_length:
+                                    New_Hit = True
+
+                                if New_Hit:
+                                    seq = Seq(add_list[4])
+
+                                    for h in range(0, len(Ref_List)):
+                                        aligner = Align.PairwiseAligner()
+                                        alignment = aligner.align(Ref_List[h], seq)
+                                        if Top_Homolog_List[h][1] < round(100 * (alignment.score / ((len(Ref_List[h]) + len(seq)) / 2)), 2):
+                                            Top_Homolog_List[h] = []
+                                            Top_Homolog_List[h].append(add_list[0])
+                                            Top_Homolog_List[h].append(round(100 * (alignment.score / ((len(Ref_List[h]) + len(seq)) / 2)), 2))
+                                            Top_Homolog_List[h].append(add_list[3])
+                                            Top_Homolog_List[h].append(add_list[4])
+                                            Top_Homolog_List[h].append(Bait_List[h][0])
+                                #need to ensure that next fasta header is not skipped
+                                need_to_check = True
+                                readfasta = False
+                        else:
+                            file = False
+                            break
+            else:
+                if candidate > -1:
+                    file = False
+                    break
+
+
+
+    if not os.path.isdir(path):
+        os.mkdir(path)
+
+    # Exporting data from analyzed transcriptome
+    Top_Hit_List = os.path.join(path,("Top Hits_" + keyword + ".txt") )
+    Top_Hit_List_peptides = os.path.join(path,("Top Hits_.fasta" + keyword + "_peptides.txt"))
+
+    with open(Top_Hit_List, 'w') as output:
+        output.write("Gene ID" + "\t" + "%ID" + "\n")
+        for i in range(0,len(Top_Homolog_List)):
+            output.write(Top_Homolog_List[i][4] + "\t" + Top_Homolog_List[i][0] + "\t" + str(Top_Homolog_List[i][1]) + "\n")
+
+    #peptide fasta format
+    with open(Top_Hit_List_peptides, 'w') as output:
+         for i in range(0,len(Top_Homolog_List)):
+            output.write(">" + Top_Homolog_List[i][0] + "\n" + Top_Homolog_List[i][3] + "\n")
+
+    Number_of_transcriptomes +=1  #iterate to next compared transcriptome
